@@ -108,13 +108,57 @@ if (-not (Test-Path $vcpkgPath)) {
 }
 
 # ------------------------------------------------------------------------------
-# 10. PYTHON & CONFIGURAZIONE PIP PER UNIGETUI
+# 10. RIMOZIONE PYTHON 2, RICERCA DINAMICA E INSTALLAZIONE PYTHON 3 & PIP
 # ------------------------------------------------------------------------------
-Write-Host "`n[10/10] Installazione forzata di Python 3.12 e configurazione Pip..." -ForegroundColor Yellow
+Write-Host "`n[10/10] Scansione del sistema per rilevare eventuali versioni di Python 2..." -ForegroundColor Yellow
 
-$pythonWingetId = "Python.Python.3.12"
+# Rileva e rimuove Python 2 usando esclusivamente winget con notifiche a schermo
+try {
+    $wingetList = winget list --accept-source-agreements
+    $python2Packages = $wingetList | Where-Object { $_ -match "Python\.Python\.2" -or $_ -match "Python 2\." }
+    
+    if ($python2Packages) {
+        Write-Host "ATTENZIONE: Trovate le seguenti versioni obsolete di Python 2 sul sistema:" -ForegroundColor Magenta
+        foreach ($pkg in $python2Packages) {
+            Write-Host "  -> $pkg" -ForegroundColor DarkYellow
+        }
+        
+        foreach ($line in $python2Packages) {
+            $parts = $line -split '\s+'
+            $id = $parts | Where-Object { $_ -match "Python\.Python\.2" } | Select-Object -First 1
+            if (-not $id) { $id = "Python.Python.2" }
+            
+            Write-Host "Disinstallazione in corso di: $id tramite winget..." -ForegroundColor Cyan
+            winget uninstall --id $id --exact --accept-source-agreements --silent
+        }
+        Write-Host "Pulizia di Python 2 completata con successo." -ForegroundColor Green
+    } else {
+        Write-Host "Nessuna versione di Python 2 rilevata sul sistema." -ForegroundColor Green
+    }
+} catch {
+    Write-Warning "Impossibile completare la scansione o la rimozione automatica di Python 2."
+}
 
-# Esegue l'installazione tramite winget forzandola se non viene trovato l'eseguibile nel sistema
+Write-Host "`nRicerca dinamica dell'ultima versione stabile di Python 3 disponibile su winget..." -ForegroundColor Yellow
+
+# Rileva dinamicamente l'ID dell'ultima versione stabile di Python 3
+try {
+    $wingetResult = winget search --id Python.Python.3 --source winget --accept-source-agreements
+    $pythonLine = $wingetResult | Where-Object { $_ -match "Python\.Python\.3\.\d+" } | Select-Object -First 1
+    if ($pythonLine) {
+        $words = $pythonLine -split '\s+'
+        $pythonWingetId = $words | Where-Object { $_ -match "Python\.Python\.3\.\d+" } | Select-Object -First 1
+    }
+    if (-not $pythonWingetId) {
+        $pythonWingetId = "Python.Python.3.12" # Fallback sicuro
+    }
+} catch {
+    $pythonWingetId = "Python.Python.3.12"
+}
+
+Write-Host "Ultima versione di Python 3 rilevata: $pythonWingetId" -ForegroundColor Cyan
+
+# Controllo e installazione tramite winget
 $installedPythonCheck = Get-Command python -ErrorAction SilentlyContinue
 if (-not $installedPythonCheck -or $installedPythonCheck.Source -like "*WindowsApps*") {
     Write-Host "Installazione di $pythonWingetId tramite winget..." -ForegroundColor Cyan
@@ -123,14 +167,18 @@ if (-not $installedPythonCheck -or $installedPythonCheck.Source -like "*WindowsA
     # Aggiorna forzatamente il PATH nella sessione corrente
     $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
 } else {
-    Write-Host "Python risulta già installato correttamente." -ForegroundColor Green
+    Write-Host "Python 3 risulta già installato correttamente." -ForegroundColor Green
 }
 
-# Cerca l'eseguibile effettivo di Python escludendo l'alias dello Store
+# Rilevamento dinamico dell'eseguibile installato tra le possibili directory standard
 $pythonExec = "python"
 $possiblePaths = @(
+    "C:\Program Files\Python313\python.exe",
     "C:\Program Files\Python312\python.exe",
+    "C:\Program Files\Python311\python.exe",
+    "$env:ProgramFiles\Python Software Foundation\Python313\python.exe",
     "$env:ProgramFiles\Python Software Foundation\Python312\python.exe",
+    "$env:LOCALAPPDATA\Programs\Python\Python313\python.exe",
     "$env:LOCALAPPDATA\Programs\Python\Python312\python.exe"
 )
 
