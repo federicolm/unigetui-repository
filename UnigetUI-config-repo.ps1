@@ -110,35 +110,48 @@ if (-not (Test-Path $vcpkgPath)) {
 # ------------------------------------------------------------------------------
 # 10. PYTHON & CONFIGURAZIONE PIP PER UNIGETUI
 # ------------------------------------------------------------------------------
-Write-Host "`n[10/10] Installazione e configurazione di Python e del repository Pip..." -ForegroundColor Yellow
+Write-Host "`n[10/10] Ricerca e installazione dell'ultima versione stabile di Python e configurazione Pip..." -ForegroundColor Yellow
 
-# Definiamo il percorso standard in cui l'installer per tutti gli utenti posiziona Python
-$pythonPath = "C:\Program Files\Python312\python.exe"
-
-# Assicura che Python sia installato tramite winget se non è presente né nel PATH né nel percorso standard
-if (-not (Test-Path $pythonPath) -and -not (Get-Command python -ErrorAction SilentlyContinue)) {
-    Write-Host "Installazione di Python (con configurazione PATH globale)..." -ForegroundColor Cyan
-    winget install --id Python.Python.3.12 --source winget --exact --accept-package-agreements --accept-source-agreements --override "/quiet InstallAllUsers=1 PrependPath=1 Include_test=0"
+# Rileva dinamicamente l'ID dell'ultima versione stabile di Python disponibile su winget
+try {
+    $wingetResult = winget search --id Python.Python --source winget --accept-source-agreements
+    $pythonLine = $wingetResult | Where-Object { $_ -match "Python\.Python\.\d+" } | Select-Object -First 1
+    if ($pythonLine) {
+        $pythonWingetId = $pythonLine.Split() | Where-Object { $_ -match "Python\.Python\.\d+" }
+    } else {
+        $pythonWingetId = "Python.Python.3.12" # Fallback di sicurezza
+    }
+} catch {
+    $pythonWingetId = "Python.Python.3.12"
 }
 
-# Forza l'aggiornamento delle variabili d'ambiente nella sessione corrente dai registri di sistema
+Write-Host "Versione Python rilevata da winget: $pythonWingetId" -ForegroundColor Cyan
+
+# Controlla se Python è installato, altrimenti lo installa con i parametri globali per il PATH
+if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
+    Write-Host "Installazione di $pythonWingetId tramite winget..." -ForegroundColor Cyan
+    winget install --id $pythonWingetId --source winget --exact --accept-package-agreements --accept-source-agreements --override "/quiet InstallAllUsers=1 PrependPath=1 Include_test=0"
+}
+
+# Aggiorna le variabili d'ambiente nella sessione corrente
 $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
 
-# Se l'eseguibile standard esiste, usiamo quello direttamente per evitare problemi di PATH non aggiornato nella shell
-if (Test-Path $pythonPath) {
-    $pythonExec = $pythonPath
+# Individua l'eseguibile di Python nei percorsi standard o usa il comando diretto
+if (Test-Path "C:\Program Files\Python312\python.exe") {
+    $pythonExec = "C:\Program Files\Python312\python.exe"
+} elseif (Test-Path "$env:ProgramFiles\Python Software Foundation\Python312\python.exe") {
+    $pythonExec = "$env:ProgramFiles\Python Software Foundation\Python312\python.exe"
 } else {
     $pythonExec = "python"
 }
 
-# Configurazione del gestore Pip e delle dipendenze
 Write-Host "Configurazione del gestore Pip e delle dipendenze per UniGetUI..." -ForegroundColor Cyan
 
 try {
-    # Installa o aggiorna la dipendenza richiesta da UniGetUI usando l'eseguibile puntato
+    # Installa o aggiorna la dipendenza richiesta da UniGetUI
     & $pythonExec -m pip install --upgrade --user parse-pip-search
     
-    # Aggiunge la cartella Scripts utente al PATH se non presente
+    # Aggiunge la cartella Scripts di Python al PATH utente se non è già presente
     $PythonUserBase = [System.Environment]::GetFolderPath('ApplicationData') + "\Python"
     $PythonScriptsPaths = Get-ChildItem -Path "$PythonUserBase\Python*" -Recurse -Filter "Scripts" -Directory -ErrorAction SilentlyContinue
     
@@ -150,7 +163,7 @@ try {
         }
     }
 } catch {
-    Write-Warning "Riscontrato un problema durante la configurazione di Pip. Verrà completata al prossimo avvio."
+    Write-Warning "Impossibile completare la configurazione automatica di Pip in questa sessione. Verrà applicata al prossimo avvio."
 }
 
 # Pulizia della cache di configurazione di UniGetUI se rileva dipendenze corrotte
@@ -164,7 +177,7 @@ if (Test-Path $UniGetUIDependencyJson) {
             Write-Host "Cache delle dipendenze di UniGetUI pulita con successo." -ForegroundColor Green
         }
     } catch {
-        # Ignora eventuali errori di lettura json se il file è bloccato
+        # Ignora se il file è bloccato
     }
 }
 
