@@ -108,7 +108,7 @@ if (-not (Test-Path $vcpkgPath)) {
 }
 
 # ------------------------------------------------------------------------------
-# 10. RIMOZIONE PYTHON 2, RICERCA DINAMICA E INSTALLAZIONE PYTHON 3 & PIP
+# 10. RIMOZIONE PYTHON 2, RICERCA DINAMICA E INSTALLAZIONE/AGGIORNAMENTO PYTHON 3 & PIP
 # ------------------------------------------------------------------------------
 Write-Host "`n[10/10] Scansione del sistema per rilevare eventuali versioni di Python 2..." -ForegroundColor Yellow
 
@@ -145,7 +145,6 @@ Write-Host "`nRicerca dinamica dell'ultima versione stabile di Python 3 disponib
 try {
     $wingetResult = winget search --id Python.Python.3 --source winget --accept-source-agreements
     
-    # Estrae tutte le righe corrispondenti a Python.Python.3.[1-9][0-9]* (esclude la 3.0 e versioni minori obsolete)
     $parsedVersions = foreach ($line in $wingetResult) {
         if ($line -match "Python\.Python\.3\.(\d+)") {
             [PSCustomObject]@{
@@ -155,44 +154,46 @@ try {
         }
     }
     
-    # Seleziona l'ID con il numero di minor più alto (es. 3.14 batte 3.12)
     $latestPython = $parsedVersions | Sort-Object Minor -Descending | Select-Object -First 1
     
     if ($latestPython) {
         $pythonWingetId = $latestPython.Id
     } else {
-        $pythonWingetId = "Python.Python.3.12" # Fallback sicuro
+        $pythonWingetId = "Python.Python.3.14" # Fallback sicuro
     }
 } catch {
-    $pythonWingetId = "Python.Python.3.12"
+    $pythonWingetId = "Python.Python.3.14"
 }
 
 Write-Host "Ultima versione di Python 3 rilevata dinamicamente: $pythonWingetId" -ForegroundColor Cyan
 
-# Controllo e installazione tramite winget
-$installedPythonCheck = Get-Command python -ErrorAction SilentlyContinue
-if (-not $installedPythonCheck -or $installedPythonCheck.Source -like "*WindowsApps*") {
-    Write-Host "Installazione di $pythonWingetId tramite winget..." -ForegroundColor Cyan
+# Verifica tramite winget list se QUELLA specifica ultima versione è già installata
+$installedPackages = winget list --accept-source-agreements
+$isLatestInstalled = $installedPackages | Where-Object { $_ -match $pythonWingetId }
+
+if (-not $isLatestInstalled) {
+    Write-Host "Installazione/Aggiornamento all'ultima versione ($pythonWingetId) tramite winget..." -ForegroundColor Cyan
     winget install --id $pythonWingetId --source winget --exact --accept-package-agreements --accept-source-agreements --override "/quiet InstallAllUsers=1 PrependPath=1 Include_test=0"
     
     # Aggiorna forzatamente il PATH nella sessione corrente
     $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
 } else {
-    Write-Host "Python 3 risulta già installato correttamente." -ForegroundColor Green
+    Write-Host "L'ultima versione di Python ($pythonWingetId) risulta già installata." -ForegroundColor Green
 }
 
-# Rilevamento dinamico dell'eseguibile installato tra le possibili directory standard (include 3.14, 3.13, 3.12)
+# Estrae dinamicamente il numero di minor per puntare al percorso corretto (es. Python314)
+$minorVersionNum = ($pythonWingetId -split '\.')[2]
+$pythonPathStandard = "C:\Program Files\Python$minorVersionNum\python.exe"
+
+# Rilevamento dinamico dell'eseguibile installato
 $pythonExec = "python"
 $possiblePaths = @(
+    $pythonPathStandard,
+    "$env:ProgramFiles\Python Software Foundation\Python$minorVersionNum\python.exe",
+    "$env:LOCALAPPDATA\Programs\Python\Python$minorVersionNum\python.exe",
     "C:\Program Files\Python314\python.exe",
     "C:\Program Files\Python313\python.exe",
-    "C:\Program Files\Python312\python.exe",
-    "$env:ProgramFiles\Python Software Foundation\Python314\python.exe",
-    "$env:ProgramFiles\Python Software Foundation\Python313\python.exe",
-    "$env:ProgramFiles\Python Software Foundation\Python312\python.exe",
-    "$env:LOCALAPPDATA\Programs\Python\Python314\python.exe",
-    "$env:LOCALAPPDATA\Programs\Python\Python313\python.exe",
-    "$env:LOCALAPPDATA\Programs\Python\Python312\python.exe"
+    "C:\Program Files\Python312\python.exe"
 )
 
 foreach ($path in $possiblePaths) {
@@ -206,7 +207,7 @@ Write-Host "Utilizzo dell'eseguibile Python: $pythonExec" -ForegroundColor Cyan
 Write-Host "Configurazione del gestore Pip e delle dipendenze per UniGetUI..." -ForegroundColor Cyan
 
 try {
-    # Installa o aggiorna la dipendenza richiesta da UniGetUI
+    # Installa o aggiorna la dipendenza richiesta da UniGetUI sulla versione attiva
     & $pythonExec -m pip install --upgrade --user parse-pip-search
     
     # Aggiunge la cartella Scripts di Python al PATH utente se non è già presente
