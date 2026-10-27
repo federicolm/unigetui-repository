@@ -141,22 +141,33 @@ try {
 
 Write-Host "`nRicerca dinamica dell'ultima versione stabile di Python 3 disponibile su winget..." -ForegroundColor Yellow
 
-# Rileva dinamicamente l'ID dell'ultima versione stabile di Python 3
+# Rileva dinamicamente l'ID dell'ultima versione stabile di Python 3 ordinando numericamente le minor version
 try {
     $wingetResult = winget search --id Python.Python.3 --source winget --accept-source-agreements
-    $pythonLine = $wingetResult | Where-Object { $_ -match "Python\.Python\.3\.\d+" } | Select-Object -First 1
-    if ($pythonLine) {
-        $words = $pythonLine -split '\s+'
-        $pythonWingetId = $words | Where-Object { $_ -match "Python\.Python\.3\.\d+" } | Select-Object -First 1
+    
+    # Estrae tutte le righe corrispondenti a Python.Python.3.[1-9][0-9]* (esclude la 3.0 e versioni minori obsolete)
+    $parsedVersions = foreach ($line in $wingetResult) {
+        if ($line -match "Python\.Python\.3\.(\d+)") {
+            [PSCustomObject]@{
+                Id      = "Python.Python.3.$($Matches[1])"
+                Minor   = [int]$Matches[1]
+            }
+        }
     }
-    if (-not $pythonWingetId) {
+    
+    # Seleziona l'ID con il numero di minor più alto (es. 3.14 batte 3.12)
+    $latestPython = $parsedVersions | Sort-Object Minor -Descending | Select-Object -First 1
+    
+    if ($latestPython) {
+        $pythonWingetId = $latestPython.Id
+    } else {
         $pythonWingetId = "Python.Python.3.12" # Fallback sicuro
     }
 } catch {
     $pythonWingetId = "Python.Python.3.12"
 }
 
-Write-Host "Ultima versione di Python 3 rilevata: $pythonWingetId" -ForegroundColor Cyan
+Write-Host "Ultima versione di Python 3 rilevata dinamicamente: $pythonWingetId" -ForegroundColor Cyan
 
 # Controllo e installazione tramite winget
 $installedPythonCheck = Get-Command python -ErrorAction SilentlyContinue
@@ -170,14 +181,16 @@ if (-not $installedPythonCheck -or $installedPythonCheck.Source -like "*WindowsA
     Write-Host "Python 3 risulta già installato correttamente." -ForegroundColor Green
 }
 
-# Rilevamento dinamico dell'eseguibile installato tra le possibili directory standard
+# Rilevamento dinamico dell'eseguibile installato tra le possibili directory standard (include 3.14, 3.13, 3.12)
 $pythonExec = "python"
 $possiblePaths = @(
+    "C:\Program Files\Python314\python.exe",
     "C:\Program Files\Python313\python.exe",
     "C:\Program Files\Python312\python.exe",
-    "C:\Program Files\Python311\python.exe",
+    "$env:ProgramFiles\Python Software Foundation\Python314\python.exe",
     "$env:ProgramFiles\Python Software Foundation\Python313\python.exe",
     "$env:ProgramFiles\Python Software Foundation\Python312\python.exe",
+    "$env:LOCALAPPDATA\Programs\Python\Python314\python.exe",
     "$env:LOCALAPPDATA\Programs\Python\Python313\python.exe",
     "$env:LOCALAPPDATA\Programs\Python\Python312\python.exe"
 )
