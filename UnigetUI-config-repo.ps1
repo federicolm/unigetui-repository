@@ -110,24 +110,27 @@ if (-not (Test-Path $vcpkgPath)) {
 # ------------------------------------------------------------------------------
 # 10. PYTHON & CONFIGURAZIONE PIP PER UNIGETUI
 # ------------------------------------------------------------------------------
-Write-Host "`n[10/10] Installazione forzata di Python 3.12 e configurazione Pip..." -ForegroundColor Yellow
+Write-Host "`n[10/10] Installazione e configurazione di Python 3 e Pip..." -ForegroundColor Yellow
 
 $pythonWingetId = "Python.Python.3.12"
+$pythonPathStandard = "C:\Program Files\Python312\python.exe"
 
-# Controlla se Python è installato, altrimenti lo installa con i parametri globali per il PATH
-if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
+# Verifica se Python 3 è effettivamente installato nei percorsi chiave
+$isPythonInstalled = (Test-Path $pythonPathStandard)
+
+if (-not $isPythonInstalled) {
     Write-Host "Installazione di $pythonWingetId tramite winget..." -ForegroundColor Cyan
     winget install --id $pythonWingetId --source winget --exact --accept-package-agreements --accept-source-agreements --override "/quiet InstallAllUsers=1 PrependPath=1 Include_test=0"
+} else {
+    Write-Host "Python 3.12 risulta già installato." -ForegroundColor Green
 }
 
 # Aggiorna le variabili d'ambiente nella sessione corrente
 $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
 
-# Individua l'eseguibile di Python nei percorsi standard o usa il comando diretto
-if (Test-Path "C:\Program Files\Python312\python.exe") {
-    $pythonExec = "C:\Program Files\Python312\python.exe"
-} elseif (Test-Path "$env:ProgramFiles\Python Software Foundation\Python312\python.exe") {
-    $pythonExec = "$env:ProgramFiles\Python Software Foundation\Python312\python.exe"
+# Definisci l'eseguibile da usare in modo sicuro
+if (Test-Path $pythonPathStandard) {
+    $pythonExec = $pythonPathStandard
 } else {
     $pythonExec = "python"
 }
