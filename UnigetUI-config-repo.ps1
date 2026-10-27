@@ -110,22 +110,22 @@ if (-not (Test-Path $vcpkgPath)) {
 # ------------------------------------------------------------------------------
 # 10. PYTHON & CONFIGURAZIONE PIP PER UNIGETUI
 # ------------------------------------------------------------------------------
-Write-Host "`n[10/10] Ricerca e installazione dell'ultima versione stabile di Python e configurazione Pip..." -ForegroundColor Yellow
+Write-Host "`n[10/10] Ricerca e installazione dell'ultima versione stabile di Python 3 e configurazione Pip..." -ForegroundColor Yellow
 
-# Rileva dinamicamente l'ID dell'ultima versione stabile di Python disponibile su winget
+# Rileva dinamicamente l'ID dell'ultima versione stabile di Python 3 (esclude categoricamente Python 2)
 try {
-    $wingetResult = winget search --id Python.Python --source winget --accept-source-agreements
-    $pythonLine = $wingetResult | Where-Object { $_ -match "Python\.Python\.\d+" } | Select-Object -First 1
+    $wingetResult = winget search --id Python.Python.3 --source winget --accept-source-agreements
+    $pythonLine = $wingetResult | Where-Object { $_ -match "Python\.Python\.3\.\d+" } | Select-Object -First 1
     if ($pythonLine) {
-        $pythonWingetId = $pythonLine.Split() | Where-Object { $_ -match "Python\.Python\.\d+" }
+        $pythonWingetId = $pythonLine.Split() | Where-Object { $_ -match "Python\.Python\.3\.\d+" }
     } else {
-        $pythonWingetId = "Python.Python.3.12" # Fallback di sicurezza
+        $pythonWingetId = "Python.Python.3.12" # Fallback sicuro su Python 3
     }
 } catch {
     $pythonWingetId = "Python.Python.3.12"
 }
 
-Write-Host "Versione Python rilevata da winget: $pythonWingetId" -ForegroundColor Cyan
+Write-Host "Versione Python 3 rilevata da winget: $pythonWingetId" -ForegroundColor Cyan
 
 # Controlla se Python è installato, altrimenti lo installa con i parametri globali per il PATH
 if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
