@@ -112,22 +112,31 @@ if (-not (Test-Path $vcpkgPath)) {
 # ------------------------------------------------------------------------------
 Write-Host "`n[10/10] Installazione e configurazione di Python e del repository Pip..." -ForegroundColor Yellow
 
-# Assicura che Python sia installato tramite winget forzando l'aggiunta al PATH globale e per tutti gli utenti
-if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
+# Definiamo il percorso standard in cui l'installer per tutti gli utenti posiziona Python
+$pythonPath = "C:\Program Files\Python312\python.exe"
+
+# Assicura che Python sia installato tramite winget se non è presente né nel PATH né nel percorso standard
+if (-not (Test-Path $pythonPath) -and -not (Get-Command python -ErrorAction SilentlyContinue)) {
     Write-Host "Installazione di Python (con configurazione PATH globale)..." -ForegroundColor Cyan
     winget install --id Python.Python.3.12 --source winget --exact --accept-package-agreements --accept-source-agreements --override "/quiet InstallAllUsers=1 PrependPath=1 Include_test=0"
-    
-    # Aggiorna forzatamente il PATH nella sessione PowerShell corrente dai registri di sistema
-    $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
 }
 
-# Rilevamento dinamico di Python nel caso in cui sia appena stato installato
-$pythonCmd = Get-Command python -ErrorAction SilentlyContinue
-if ($pythonCmd) {
-    Write-Host "Configurazione del gestore Pip e delle dipendenze per UniGetUI..." -ForegroundColor Cyan
-    
-    # Installa o aggiorna la dipendenza richiesta da UniGetUI
-    python -m pip install --upgrade --user parse-pip-search
+# Forza l'aggiornamento delle variabili d'ambiente nella sessione corrente dai registri di sistema
+$env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+
+# Se l'eseguibile standard esiste, usiamo quello direttamente per evitare problemi di PATH non aggiornato nella shell
+if (Test-Path $pythonPath) {
+    $pythonExec = $pythonPath
+} else {
+    $pythonExec = "python"
+}
+
+# Configurazione del gestore Pip e delle dipendenze
+Write-Host "Configurazione del gestore Pip e delle dipendenze per UniGetUI..." -ForegroundColor Cyan
+
+try {
+    # Installa o aggiorna la dipendenza richiesta da UniGetUI usando l'eseguibile puntato
+    & $pythonExec -m pip install --upgrade --user parse-pip-search
     
     # Aggiunge la cartella Scripts utente al PATH se non presente
     $PythonUserBase = [System.Environment]::GetFolderPath('ApplicationData') + "\Python"
@@ -140,18 +149,22 @@ if ($pythonCmd) {
             Write-Host "Aggiunta la cartella Scripts di Python al PATH utente: $($targetScriptPath.FullName)" -ForegroundColor Green
         }
     }
-} else {
-    Write-Warning "Python non è ancora disponibile nella sessione corrente. Sarà attivo dopo il riavvio."
+} catch {
+    Write-Warning "Riscontrato un problema durante la configurazione di Pip. Verrà completata al prossimo avvio."
 }
 
 # Pulizia della cache di configurazione di UniGetUI se rileva dipendenze corrotte
 $UniGetUIDependencyJson = "$env:LOCALAPPDATA\UniGetUI\Configuration\DependencyManagement.json"
 if (Test-Path $UniGetUIDependencyJson) {
-    $jsonContent = Get-Content $UniGetUIDependencyJson -Raw | ConvertFrom-Json
-    if ($jsonContent.PSObject.Properties.Name -contains "parse-pip-search") {
-        $jsonContent.PSObject.Properties.Remove("parse-pip-search")
-        $jsonContent | ConvertTo-Json -Depth 10 | Set-Content $UniGetUIDependencyJson
-        Write-Host "Cache delle dipendenze di UniGetUI pulita con successo." -ForegroundColor Green
+    try {
+        $jsonContent = Get-Content $UniGetUIDependencyJson -Raw | ConvertFrom-Json
+        if ($jsonContent.PSObject.Properties.Name -contains "parse-pip-search") {
+            $jsonContent.PSObject.Properties.Remove("parse-pip-search")
+            $jsonContent | ConvertTo-Json -Depth 10 | Set-Content $UniGetUIDependencyJson
+            Write-Host "Cache delle dipendenze di UniGetUI pulita con successo." -ForegroundColor Green
+        }
+    } catch {
+        # Ignora eventuali errori di lettura json se il file è bloccato
     }
 }
 
