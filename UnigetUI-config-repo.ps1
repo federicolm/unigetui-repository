@@ -112,23 +112,24 @@ if (-not (Test-Path $vcpkgPath)) {
 # ------------------------------------------------------------------------------
 Write-Host "`n[10/10] Installazione e configurazione di Python e del repository Pip..." -ForegroundColor Yellow
 
-# Assicura che Python sia installato tramite winget se assente
+# Assicura che Python sia installato tramite winget forzando l'aggiunta al PATH globale e per tutti gli utenti
 if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
-    Write-Host "Installazione di Python..." -ForegroundColor Cyan
-    winget install --id Python.Python.3.12 --source winget --exact --accept-package-agreements --accept-source-agreements
+    Write-Host "Installazione di Python (con configurazione PATH globale)..." -ForegroundColor Cyan
+    winget install --id Python.Python.3.12 --source winget --exact --accept-package-agreements --accept-source-agreements --override "/quiet InstallAllUsers=1 PrependPath=1 Include_test=0"
     
-    # Ricarica il PATH per includere Python appena installato
+    # Aggiorna forzatamente il PATH nella sessione PowerShell corrente dai registri di sistema
     $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
 }
 
-Write-Host "Configurazione del gestore Pip e delle dipendenze per UniGetUI..." -ForegroundColor Cyan
-
-# 1. Verifica che Python e Pip siano installati
-if (Get-Command pip -ErrorAction SilentlyContinue) {
-    # Installa o aggiorna la dipendenza richiesta da UniGetUI per il parsing delle ricerche su PyPI
+# Rilevamento dinamico di Python nel caso in cui sia appena stato installato
+$pythonCmd = Get-Command python -ErrorAction SilentlyContinue
+if ($pythonCmd) {
+    Write-Host "Configurazione del gestore Pip e delle dipendenze per UniGetUI..." -ForegroundColor Cyan
+    
+    # Installa o aggiorna la dipendenza richiesta da UniGetUI
     python -m pip install --upgrade --user parse-pip-search
     
-    # 2. Aggiunge la cartella Scripts di Python al PATH utente se non è già presente
+    # Aggiunge la cartella Scripts utente al PATH se non presente
     $PythonUserBase = [System.Environment]::GetFolderPath('ApplicationData') + "\Python"
     $PythonScriptsPaths = Get-ChildItem -Path "$PythonUserBase\Python*" -Recurse -Filter "Scripts" -Directory -ErrorAction SilentlyContinue
     
@@ -140,10 +141,10 @@ if (Get-Command pip -ErrorAction SilentlyContinue) {
         }
     }
 } else {
-    Write-Warning "Python/Pip non sembra essere installato o non è nel PATH di sistema. Il modulo Pip di UniGetUI potrebbe non funzionare."
+    Write-Warning "Python non è ancora disponibile nella sessione corrente. Sarà attivo dopo il riavvio."
 }
 
-# 3. Pulizia della cache di configurazione di UniGetUI se rileva dipendenze corrotte
+# Pulizia della cache di configurazione di UniGetUI se rileva dipendenze corrotte
 $UniGetUIDependencyJson = "$env:LOCALAPPDATA\UniGetUI\Configuration\DependencyManagement.json"
 if (Test-Path $UniGetUIDependencyJson) {
     $jsonContent = Get-Content $UniGetUIDependencyJson -Raw | ConvertFrom-Json
